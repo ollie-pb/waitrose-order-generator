@@ -97,19 +97,52 @@ Shows:
 - Regular vs infrequent items
 - Top 10 most purchased items
 
-### Scrape Orders (Coming Soon)
+### Scrape Orders
 
 ```bash
 node cli.js scrape
 ```
 
-Will use Claude in Chrome to automatically extract your Waitrose order history.
+Uses Claude in Chrome MCP tools to extract your Waitrose order history. The scraper:
+- Logs into your Waitrose account (via visible browser)
+- Navigates through your order history
+- Extracts product names and quantities
+- Saves everything to your local database
+
+**Note**: Currently requires manual execution. Automated batch scraping coming soon.
+
+## Real Example
+
+After scraping 15 Waitrose orders (Aug 2025 - Jan 2026), the generator produces highly accurate recommendations:
+
+```
+📊 Shopping Pattern Statistics
+
+Total Orders: 15
+Unique Products: 262
+
+Regular items (≥40% frequency): 29
+Infrequent items (<40% frequency): 90
+One-off purchases: 143
+
+Top 10 Most Frequent Items:
+Waitrose Wild Rocket          | 100% | 15
+Duchy Organic Blueberries     | 93%  | 14
+Perfectly Ripe Avocados       | 93%  | 14
+Waitrose Fairtrade Bananas    | 87%  | 13
+Duchy Organic Courgettes      | 80%  | 12
+```
+
+The generated shopping list includes:
+- **Regular items** with 100% confidence (bought in every order)
+- **Infrequent items** with purchase cycle tracking (e.g., "purchased every 24 days, last bought 26 days ago")
+- **Smart quantities** based on historical averages
 
 ## How It Works
 
 ### 1. Data Collection
 
-Currently uses test data. Claude in Chrome integration coming soon to automatically scrape your Waitrose order history.
+Uses Claude in Chrome MCP tools to scrape your Waitrose order history directly from your account. All order data (product names, quantities, dates) is stored in your local SQLite database.
 
 ### 2. Pattern Analysis
 
@@ -226,10 +259,10 @@ cp .env.example .env
 
 ### "Only X orders found. Need at least 3"
 
-You need at least 3 orders for pattern analysis. Options:
-1. Wait for scraper implementation
-2. Add more test data via `test-db.js`
-3. Manually add orders to the database
+You need at least 3 orders for pattern analysis. Use the scraper to extract your Waitrose order history:
+1. Ensure you have Claude in Chrome MCP tools installed
+2. Run `node cli.js scrape` to start the scraping process
+3. The scraper will guide you through extracting your orders
 
 ### "Rate limit exceeded"
 
@@ -245,17 +278,19 @@ node test-db.js
 
 ## Roadmap
 
-### ✅ v0.1 (Current)
+### ✅ v0.1 (Complete)
 - [x] Database setup and schema
 - [x] Pattern analysis engine
 - [x] Claude API integration
 - [x] CLI interface
 - [x] Shopping list generation
+- [x] Claude in Chrome integration for scraping
+- [x] Manual order history extraction
 
 ### 🚧 v0.2 (Next)
-- [ ] Claude in Chrome integration for scraping
-- [ ] Automatic order history extraction
+- [ ] Automated batch scraping
 - [ ] Real-time progress indicators during scraping
+- [ ] Export formats (CSV, PDF)
 
 ### 🔮 Future
 - [ ] Auto-add items to Waitrose basket
