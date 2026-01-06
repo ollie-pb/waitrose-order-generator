@@ -14,7 +14,8 @@ import {
   saveShoppingList,
   getOrderCount,
   getAllShoppingLists,
-  getShoppingList
+  getShoppingList,
+  getLastSyncTime
 } from './src/database.js';
 import {
   classifyItems,
@@ -127,6 +128,42 @@ program
 
     // TODO: Implement Claude in Chrome integration
     // This will be Phase 3b
+  });
+
+/**
+ * Command: Detect new orders
+ */
+program
+  .command('detect')
+  .description('Check for new orders since last scrape (requires Claude Code)')
+  .option('--auto-import', 'Automatically import new orders (not yet implemented)')
+  .option('--max <number>', 'Maximum orders to check', '50')
+  .action(async (options) => {
+    try {
+      const db = initializeDatabase();
+      const lastSync = getLastSyncTime(db);
+      const orderCount = getOrderCount(db);
+
+      console.log(chalk.bold.cyan('\n🔍 Order Detection Status\n'));
+      console.log(chalk.gray('═'.repeat(50)));
+      console.log(`${chalk.bold('Last sync:')} ${lastSync.time || 'Never'}`);
+      console.log(`${chalk.bold('Orders in database:')} ${orderCount}`);
+      console.log(chalk.gray('═'.repeat(50)) + '\n');
+
+      console.log(chalk.yellow('💡 Detection requires Claude Code integration\n'));
+      console.log('To detect new orders:');
+      console.log(chalk.gray('1. Open Claude Code (https://claude.com/code)'));
+      console.log(chalk.gray('2. Ask: "Detect new Waitrose orders"'));
+      console.log(chalk.gray('3. Claude will use Chrome automation to check for new orders\n'));
+
+      console.log(chalk.dim('Note: This command shows status only.'));
+      console.log(chalk.dim('Full detection requires Claude in Chrome MCP tools.\n'));
+
+      db.close();
+    } catch (error) {
+      displayError(error);
+      process.exit(1);
+    }
   });
 
 /**

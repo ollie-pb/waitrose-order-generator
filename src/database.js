@@ -52,6 +52,20 @@ export function initializeDatabase() {
       FOREIGN KEY (list_id) REFERENCES shopping_lists(id) ON DELETE CASCADE
     );
 
+    -- Sync metadata table for tracking detection runs
+    CREATE TABLE IF NOT EXISTS sync_metadata (
+      key TEXT PRIMARY KEY,
+      last_sync_time TEXT,
+      last_sync_timestamp INTEGER,
+      order_count_at_sync INTEGER,
+      status TEXT CHECK(status IN ('success', 'partial', 'failed'))
+    );
+
+    -- Initialize sync metadata if not exists
+    INSERT OR IGNORE INTO sync_metadata
+    (key, last_sync_time, last_sync_timestamp, order_count_at_sync, status)
+    VALUES ('waitrose_orders', NULL, 0, 0, 'not_started');
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(order_date);
     CREATE INDEX IF NOT EXISTS idx_order_items_name ON order_items(product_name);
@@ -262,4 +276,53 @@ export function clearAllData(db) {
     DELETE FROM order_items;
     DELETE FROM orders;
   `);
+}
+
+/**
+ * Get last sync timestamp
+ */
+export function getLastSyncTime(db) {
+  const result = db.prepare(`
+    SELECT last_sync_time, last_sync_timestamp
+    FROM sync_metadata
+    WHERE key = 'waitrose_orders'
+  `).get();
+
+  return result ? {
+    time: result.last_sync_time,
+    timestamp: result.last_sync_timestamp
+  } : { time: null, timestamp: 0 };
+}
+
+/**
+ * Update sync metadata after detection
+ */
+export function updateSyncMetadata(db, orderCount, status = 'success') {
+  const now = new Date();
+  const isoTime = now.toISOString();
+  const unixTime = Math.floor(now.getTime() / 1000);
+
+  const stmt = db.prepare(`
+    UPDATE sync_metadata
+    SET
+      last_sync_time = ?,
+      last_sync_timestamp = ?,
+      order_count_at_sync = ?,
+      status = ?
+    WHERE key = 'waitrose_orders'
+  `);
+
+  stmt.run(isoTime, unixTime, orderCount, status);
+}
+
+/**
+ * Filter to only new orders (not in database)
+ */
+export function filterExistingOrders(db, orders) {
+  const checkStmt = db.prepare('SELECT id FROM orders WHERE order_number = ?');
+
+  return orders.filter(order => {
+    const existing = checkStmt.get(order.order_number);
+    return !existing;
+  });
 }

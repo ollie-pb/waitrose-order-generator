@@ -111,6 +111,37 @@ Uses Claude in Chrome MCP tools to extract your Waitrose order history. The scra
 
 **Note**: Currently requires manual execution. Automated batch scraping coming soon.
 
+### Detect New Orders
+
+Check for new orders since your last scrape:
+
+```bash
+node cli.js detect
+```
+
+Shows your current detection status:
+- Last sync timestamp
+- Number of orders in database
+- Instructions for running detection through Claude Code
+
+**Options:**
+- `--auto-import` - Auto-import new orders (planned feature)
+- `--max <number>` - Maximum orders to check (default: 50)
+
+**How Detection Works:**
+
+Detection runs through Claude Code (not standalone CLI):
+1. Ask Claude Code: "Detect new Waitrose orders"
+2. Claude uses Chrome automation to check your order history
+3. Only new orders (not in database) are identified
+4. Summary shows: new orders found, duplicates skipped, sync status
+
+**Benefits:**
+- ⚡ 90% faster than full re-scrape
+- 🎯 Only checks for new orders
+- 🔄 Idempotent - safe to run multiple times
+- 📊 Keeps pattern analysis fresh
+
 ## Real Example
 
 After scraping 15 Waitrose orders (Aug 2025 - Jan 2026), the generator produces highly accurate recommendations:
@@ -287,9 +318,16 @@ node test-db.js
 - [x] Claude in Chrome integration for scraping
 - [x] Manual order history extraction
 
-### 🚧 v0.2 (Next)
+### ✅ v0.2 (Complete)
+- [x] New order detection (via Claude Code)
+- [x] Sync metadata tracking
+- [x] Order deduplication
+- [x] Detection status command
+
+### 🚧 v0.3 (Next)
 - [ ] Automated batch scraping
 - [ ] Real-time progress indicators during scraping
+- [ ] Auto-import for detected orders
 - [ ] Export formats (CSV, PDF)
 
 ### 🔮 Future

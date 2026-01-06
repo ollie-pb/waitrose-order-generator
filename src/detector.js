@@ -1,31 +1,96 @@
 /**
- * Waitrose scraper using Claude in Chrome MCP tools
- * This integrates with the existing Chrome automation tools
+ * Order detection coordinator
+ * Checks for new Waitrose orders since last scrape
  */
 
-import { insertOrder, insertOrderItems } from './database.js';
-
-// These are the MCP tool functions (will be passed in from CLI)
-let chromeTools = null;
+import chalk from 'chalk';
+import { scrapeWaitroseOrders } from './chrome-scraper.js';
+import {
+  getLastSyncTime,
+  updateSyncMetadata,
+  filterExistingOrders,
+  getOrderCount
+} from './database.js';
 
 /**
- * Initialize the scraper with Chrome MCP tools
+ * Detect new orders since last scrape
+ * @param {Database} db - SQLite database instance
+ * @param {Object} chromeTools - Chrome MCP tools (passed from Claude Code context)
+ * @param {Object} options - Detection options
+ * @returns {Object} Detection summary
  */
-export function initializeScraper(tools) {
-  chromeTools = tools;
+export async function detectNewOrders(db, chromeTools, options = {}) {
+  const { autoImport = false, maxOrders = 50, onProgress = null } = options;
+
+  console.log('🔍 Starting order detection...\n');
+
+  // Get last sync info
+  const lastSync = getLastSyncTime(db);
+  const currentOrderCount = getOrderCount(db);
+
+  console.log(`📊 Current database status:`);
+  console.log(`   Last sync: ${lastSync.time || 'Never'}`);
+  console.log(`   Orders in DB: ${currentOrderCount}\n`);
+
+  try {
+    // Use existing scraper to extract orders from Waitrose
+    // The scraper handles:
+    // - Chrome initialization
+    // - Navigation to order history
+    // - Login prompts
+    // - Order extraction
+    const extractedOrders = await extractOrdersOnly(db, chromeTools, maxOrders, onProgress);
+
+    console.log(`\n📋 Found ${extractedOrders.length} orders on page`);
+
+    // Filter to only new orders
+    const newOrders = filterExistingOrders(db, extractedOrders);
+    const duplicates = extractedOrders.length - newOrders.length;
+
+    console.log(`✨ ${newOrders.length} new orders detected`);
+    console.log(`♻️  ${duplicates} already in database\n`);
+
+    // Prepare result
+    const result = {
+      lastSync: lastSync.time,
+      totalExtracted: extractedOrders.length,
+      newOrders: newOrders.length,
+      newOrderNumbers: newOrders.map(o => o.order_number),
+      duplicates: duplicates,
+      imported: 0,
+      importSkipped: !autoImport
+    };
+
+    // Note: Auto-import would require full scraping (with item details)
+    // For now, detection only identifies new order numbers
+    if (autoImport && newOrders.length > 0) {
+      console.log(chalk.yellow('⚠️  Auto-import requires full order scraping (not yet implemented)'));
+      console.log('   For now, detection only identifies new order numbers.');
+      console.log('   Use `node cli.js scrape` to import full order details.\n');
+    }
+
+    // Update sync metadata
+    updateSyncMetadata(db, currentOrderCount + newOrders.length, 'success');
+
+    return result;
+
+  } catch (error) {
+    console.error('❌ Detection failed:', error.message);
+
+    // Update metadata with failure status
+    updateSyncMetadata(db, currentOrderCount, 'failed');
+
+    throw error;
+  }
 }
 
 /**
- * Scrape Waitrose orders using Claude in Chrome
+ * Extract orders without importing them
+ * Uses the chrome scraper but only returns order metadata
  */
-export async function scrapeWaitroseOrders(db, options = {}) {
-  const { maxOrders = 50, onProgress = null } = options;
-
-  if (!chromeTools) {
-    throw new Error('Chrome tools not initialized. This feature requires Claude in Chrome.');
-  }
-
-  console.log('\n🌐 Starting Waitrose order scraper...\n');
+async function extractOrdersOnly(db, chromeTools, maxOrders, onProgress) {
+  // We'll reuse the scraping logic but only extract order numbers/dates
+  // This is more efficient than full scraping with item details
 
   let tabId = null;
 
@@ -37,15 +102,11 @@ export async function scrapeWaitroseOrders(db, options = {}) {
     const tabs = context.tabs || [];
 
     if (tabs.length === 0) {
-      // Create new tab
       const newTab = await chromeTools.tabs_create_mcp({});
       tabId = newTab.tabId;
     } else {
-      // Use existing tab
       tabId = tabs[0].id;
     }
-
-    console.log(`✅ Using Chrome tab ${tabId}\n`);
 
     // Step 2: Navigate to Waitrose order history
     if (onProgress) onProgress({ step: 'navigate', message: 'Navigating to Waitrose...' });
@@ -56,81 +117,37 @@ export async function scrapeWaitroseOrders(db, options = {}) {
     });
 
     console.log('📍 Navigated to Waitrose order history page');
-    console.log('⏳ Waiting for page to load...\n');
 
-    await sleep(3000); // Give page time to load
+    // Wait for page to load
+    await sleep(3000);
 
     // Step 3: Check if login is required
     const pageSnapshot = await chromeTools.read_page({ tabId });
     const pageText = pageSnapshot.text || '';
 
     if (pageText.toLowerCase().includes('sign in') || pageText.toLowerCase().includes('log in')) {
-      console.log('🔐 Login required!\n');
+      console.log('🔐 Login required!');
       console.log('Please log in to Waitrose in the browser window.');
-      console.log('Press Enter when you have logged in and see your order history...');
+      console.log('Press Enter when you have logged in and see your order history...\n');
 
-      // Wait for user input
       await waitForEnter();
 
-      // Re-read page after login
-      const loggedInPage = await chromeTools.read_page({ tabId });
       console.log('✅ Login confirmed\n');
     }
 
-    // Step 4: Extract order data from the page
+    // Step 4: Extract order data from page
     if (onProgress) onProgress({ step: 'extract', message: 'Extracting orders...' });
 
-    console.log('🔍 Analyzing order history page...\n');
+    console.log('🔍 Analyzing order history page...');
 
-    const orders = await extractOrdersFromPage(tabId, maxOrders, onProgress);
+    const pageTextFull = await chromeTools.get_page_text({ tabId });
+    const orders = parseOrdersFromText(pageTextFull);
 
-    console.log(`\n✅ Found ${orders.length} orders\n`);
-
-    // Step 5: Save to database
-    if (onProgress) onProgress({ step: 'save', message: 'Saving to database...' });
-
-    const result = await saveOrdersToDatabase(db, orders, onProgress);
-
-    console.log(`\n📊 Results:`);
-    console.log(`   Saved: ${result.savedCount} orders`);
-    console.log(`   Skipped: ${result.skippedCount} orders`);
-    console.log(`   Total items: ${result.totalItems}\n`);
-
-    return result;
-
-  } catch (error) {
-    console.error('❌ Scraping failed:', error.message);
-    throw error;
-  }
-}
-
-/**
- * Extract orders from the Waitrose order history page
- */
-async function extractOrdersFromPage(tabId, maxOrders, onProgress) {
-  const orders = [];
-
-  try {
-    // Get page content
-    const pageText = await chromeTools.get_page_text({ tabId });
-
-    // Try to find order elements using the find tool
-    const orderElements = await chromeTools.find({
-      tabId,
-      query: 'order history items or order cards'
-    });
-
-    console.log(`Found ${orderElements.length} potential order elements\n`);
-
-    // For now, we'll parse the page text to extract order data
-    // This is a simplified version - real implementation would use the accessibility tree
-    const parsedOrders = parseOrdersFromText(pageText);
-
-    return parsedOrders.slice(0, maxOrders);
+    return orders.slice(0, maxOrders);
 
   } catch (error) {
     console.error('Error extracting orders:', error.message);
-    return [];
+    throw error;
   }
 }
 
@@ -201,47 +218,6 @@ function parseDateString(dateStr) {
   } catch (error) {
     return null;
   }
-}
-
-/**
- * Save orders to database
- */
-async function saveOrdersToDatabase(db, orders, onProgress) {
-  let savedCount = 0;
-  let skippedCount = 0;
-  let totalItems = 0;
-
-  for (let i = 0; i < orders.length; i++) {
-    const order = orders[i];
-
-    try {
-      // Insert order
-      const orderId = insertOrder(db, {
-        order_number: order.order_number,
-        order_date: order.order_date
-      });
-
-      // Insert items
-      insertOrderItems(db, orderId, order.items);
-
-      totalItems += order.items.length;
-      savedCount++;
-
-      if (onProgress) {
-        onProgress({
-          step: 'save',
-          current: i + 1,
-          total: orders.length,
-          message: `Saving order ${i + 1}/${orders.length}`
-        });
-      }
-    } catch (error) {
-      console.warn(`⚠️  Failed to save order ${order.order_number}:`, error.message);
-      skippedCount++;
-    }
-  }
-
-  return { savedCount, skippedCount, totalItems };
 }
 
 /**
