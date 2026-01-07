@@ -4,6 +4,8 @@
  */
 
 import { insertOrder, insertOrderItems } from './database.js';
+import { parseOrdersFromText, parseDateString } from './order-parser.js';
+import { sleep, waitForEnter } from './utils.js';
 
 // These are the MCP tool functions (will be passed in from CLI)
 let chromeTools = null;
@@ -13,6 +15,96 @@ let chromeTools = null;
  */
 export function initializeScraper(tools) {
   chromeTools = tools;
+}
+
+/**
+ * Smart wait for order history page to load
+ * Polls for order content indicators instead of hardcoded sleep
+ */
+async function waitForOrderHistoryLoad(chromeTools, tabId, maxWait = 5000) {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWait) {
+    const snapshot = await chromeTools.read_page({ tabId });
+    const pageText = snapshot.text || '';
+
+    // Check for order content indicators (order numbers or login prompts)
+    // Order numbers are 10 digits preceded by #
+    if (/#\d{10}/.test(pageText) || pageText.toLowerCase().includes('sign in')) {
+      return true;  // Page loaded (either showing orders or login prompt)
+    }
+
+    await sleep(200);  // Poll every 200ms
+  }
+
+  // Timeout reached - page might be slow but continue anyway
+  console.warn('⚠️  Page load timeout reached (5s), continuing...');
+  return false;
+}
+
+/**
+ * Extract order metadata without full scraping
+ * Returns order numbers and dates only (no item details)
+ * Used by detection workflow for fast new order discovery
+ */
+export async function extractOrderMetadata(chromeTools, maxOrders = 50, onProgress = null) {
+  let tabId = null;
+
+  try {
+    // Step 1: Get or create Chrome tab context
+    if (onProgress) onProgress({ step: 'init', message: 'Initializing Chrome...' });
+
+    const context = await chromeTools.tabs_context_mcp({ createIfEmpty: true });
+    const tabs = context.tabs || [];
+
+    if (tabs.length === 0) {
+      const newTab = await chromeTools.tabs_create_mcp({});
+      tabId = newTab.tabId;
+    } else {
+      tabId = tabs[0].id;
+    }
+
+    // Step 2: Navigate to Waitrose order history
+    if (onProgress) onProgress({ step: 'navigate', message: 'Navigating to Waitrose...' });
+
+    await chromeTools.navigate({
+      tabId,
+      url: 'https://www.waitrose.com/ecom/my-account/order-history'
+    });
+
+    console.log('📍 Navigated to Waitrose order history page');
+
+    // Smart wait for page content to load
+    await waitForOrderHistoryLoad(chromeTools, tabId);
+
+    // Step 3: Check if login is required
+    const pageSnapshot = await chromeTools.read_page({ tabId });
+    const pageText = pageSnapshot.text || '';
+
+    if (pageText.toLowerCase().includes('sign in') || pageText.toLowerCase().includes('log in')) {
+      console.log('🔐 Login required!');
+      console.log('Please log in to Waitrose in the browser window.');
+      console.log('Press Enter when you have logged in and see your order history...\n');
+
+      await waitForEnter();
+
+      console.log('✅ Login confirmed\n');
+    }
+
+    // Step 4: Extract order data from page
+    if (onProgress) onProgress({ step: 'extract', message: 'Extracting orders...' });
+
+    console.log('🔍 Analyzing order history page...');
+
+    const pageTextFull = await chromeTools.get_page_text({ tabId });
+    const orders = parseOrdersFromText(pageTextFull);
+
+    return orders.slice(0, maxOrders);
+
+  } catch (error) {
+    console.error('Error extracting order metadata:', error.message);
+    throw error;
+  }
 }
 
 /**
@@ -58,7 +150,8 @@ export async function scrapeWaitroseOrders(db, options = {}) {
     console.log('📍 Navigated to Waitrose order history page');
     console.log('⏳ Waiting for page to load...\n');
 
-    await sleep(3000); // Give page time to load
+    // Smart wait for page content to load
+    await waitForOrderHistoryLoad(chromeTools, tabId);
 
     // Step 3: Check if login is required
     const pageSnapshot = await chromeTools.read_page({ tabId });
@@ -135,75 +228,6 @@ async function extractOrdersFromPage(tabId, maxOrders, onProgress) {
 }
 
 /**
- * Parse orders from page text
- * Extracts order numbers and dates from Waitrose order history
- */
-function parseOrdersFromText(pageText) {
-  const orders = [];
-
-  try {
-    // Extract order numbers (format: #1234567890)
-    const orderNumberPattern = /#(\d{10})/g;
-    const orderNumbers = [];
-    let match;
-
-    while ((match = orderNumberPattern.exec(pageText)) !== null) {
-      orderNumbers.push(match[1]);
-    }
-
-    // Extract dates (format: "Saturday 3 January", "Thursday 11 December", etc.)
-    const datePattern = /(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)/g;
-    const dates = [];
-
-    while ((match = datePattern.exec(pageText)) !== null) {
-      const dateStr = `${match[2]} ${match[3]}`; // "3 January"
-      const parsedDate = parseDateString(dateStr);
-      if (parsedDate) {
-        dates.push(parsedDate);
-      }
-    }
-
-    // Match order numbers with dates (they should appear in pairs)
-    const minLength = Math.min(orderNumbers.length, dates.length);
-
-    for (let i = 0; i < minLength; i++) {
-      orders.push({
-        order_number: orderNumbers[i],
-        order_date: dates[i],
-        items: [] // Detection doesn't extract full item details
-      });
-    }
-
-    console.log(`📋 Parsed ${orders.length} orders from page`);
-
-  } catch (error) {
-    console.error('Error parsing orders:', error.message);
-  }
-
-  return orders;
-}
-
-/**
- * Parse date string to ISO format
- * Converts "3 January" to "2025-01-03" (assuming current year)
- */
-function parseDateString(dateStr) {
-  try {
-    const currentYear = new Date().getFullYear();
-    const fullDateStr = `${dateStr} ${currentYear}`;
-    const date = new Date(fullDateStr);
-
-    if (isNaN(date.getTime())) {
-      return null;
-    }
-
-    return date.toISOString().split('T')[0];
-  } catch (error) {
-    return null;
-  }
-}
-
-/**
  * Save orders to database
  */
 async function saveOrdersToDatabase(db, orders, onProgress) {
@@ -242,28 +266,4 @@ async function saveOrdersToDatabase(db, orders, onProgress) {
   }
 
   return { savedCount, skippedCount, totalItems };
-}
-
-/**
- * Helper: Sleep for specified milliseconds
- */
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Helper: Wait for user to press Enter
- */
-function waitForEnter() {
-  return new Promise(resolve => {
-    const readline = require('readline').createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-
-    readline.question('', () => {
-      readline.close();
-      resolve();
-    });
-  });
 }

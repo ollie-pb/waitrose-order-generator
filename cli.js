@@ -27,6 +27,23 @@ import { log, formatShoppingList, formatSimpleList, displayError } from './src/u
 
 const program = new Command();
 
+/**
+ * Validate numeric input to prevent injection and memory exhaustion attacks
+ */
+function validateNumericInput(value, paramName, min = 0, max = 1000) {
+  const parsed = parseInt(value);
+
+  if (isNaN(parsed)) {
+    throw new Error(`${paramName} must be a valid number`);
+  }
+
+  if (parsed < min || parsed > max) {
+    throw new Error(`${paramName} must be between ${min} and ${max}`);
+  }
+
+  return parsed;
+}
+
 program
   .name('waitrose-generate')
   .description('Generate intelligent shopping lists from Waitrose order history')
@@ -180,7 +197,8 @@ program
 
       if (options.id) {
         // Show specific list
-        const list = getShoppingList(db, parseInt(options.id));
+        const listId = validateNumericInput(options.id, '--id', 1, 9999);
+        const list = getShoppingList(db, listId);
 
         if (!list) {
           log(`List #${options.id} not found`, 'error');
@@ -199,8 +217,9 @@ program
         console.log();
       } else {
         // Show list of recent lists
+        const limit = validateNumericInput(options.limit, '--limit', 1, 100);
         const lists = getAllShoppingLists(db);
-        const limited = lists.slice(0, parseInt(options.limit));
+        const limited = lists.slice(0, limit);
 
         if (limited.length === 0) {
           log('No shopping lists found', 'warning');

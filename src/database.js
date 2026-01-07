@@ -12,6 +12,15 @@ const DB_PATH = join(__dirname, '..', 'data', 'shopping.db');
 export function initializeDatabase() {
   const db = new Database(DB_PATH);
 
+  // CRITICAL: Enable foreign keys FIRST (before any operations)
+  db.pragma('foreign_keys = ON');
+
+  // Verify foreign keys are enabled
+  const fkStatus = db.pragma('foreign_keys', { simple: true });
+  if (!fkStatus) {
+    throw new Error('Failed to enable foreign key constraints');
+  }
+
   // Enable WAL mode for better concurrency
   db.pragma('journal_mode = WAL');
 
@@ -64,7 +73,7 @@ export function initializeDatabase() {
     -- Initialize sync metadata if not exists
     INSERT OR IGNORE INTO sync_metadata
     (key, last_sync_time, last_sync_timestamp, order_count_at_sync, status)
-    VALUES ('waitrose_orders', NULL, 0, 0, 'not_started');
+    VALUES ('waitrose_orders', NULL, 0, 0, 'success');
 
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(order_date);
@@ -317,12 +326,26 @@ export function updateSyncMetadata(db, orderCount, status = 'success') {
 
 /**
  * Filter to only new orders (not in database)
+ * Uses bulk query to avoid N+1 performance problem
  */
 export function filterExistingOrders(db, orders) {
-  const checkStmt = db.prepare('SELECT id FROM orders WHERE order_number = ?');
+  if (orders.length === 0) {
+    return [];
+  }
 
-  return orders.filter(order => {
-    const existing = checkStmt.get(order.order_number);
-    return !existing;
-  });
+  // Extract all order numbers for bulk query
+  const orderNumbers = orders.map(o => o.order_number);
+
+  // Build placeholders for IN clause (?, ?, ?, ...)
+  const placeholders = orderNumbers.map(() => '?').join(', ');
+
+  // Single bulk query instead of N individual queries
+  const query = `SELECT order_number FROM orders WHERE order_number IN (${placeholders})`;
+  const existingOrders = db.prepare(query).all(...orderNumbers);
+
+  // Convert to Set for O(1) lookup
+  const existingSet = new Set(existingOrders.map(row => row.order_number));
+
+  // Filter out existing orders
+  return orders.filter(order => !existingSet.has(order.order_number));
 }
