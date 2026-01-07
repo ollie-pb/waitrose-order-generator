@@ -158,3 +158,38 @@ export function waitForEnter() {
     });
   });
 }
+
+/**
+ * Prompt user to select an action from a list of options
+ * @param {Array<string>} actions - List of action choices
+ * @returns {Promise<string>} Selected action
+ */
+export function promptAction(actions) {
+  return new Promise((resolve) => {
+    const readline = require('readline').createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    console.log(chalk.bold.cyan('\n❓ What would you like to do?\n'));
+
+    actions.forEach((action, index) => {
+      console.log(chalk.gray(`  ${index + 1}.`) + ` ${action}`);
+    });
+
+    console.log();
+
+    readline.question(chalk.bold('Select (1-' + actions.length + '): '), (answer) => {
+      const choice = parseInt(answer);
+
+      if (isNaN(choice) || choice < 1 || choice > actions.length) {
+        console.log(chalk.red('\n❌ Invalid choice. Please try again.\n'));
+        readline.close();
+        resolve(promptAction(actions)); // Recursive retry
+      } else {
+        readline.close();
+        resolve(actions[choice - 1]);
+      }
+    });
+  });
+}
