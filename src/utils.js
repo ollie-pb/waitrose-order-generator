@@ -3,6 +3,7 @@
  */
 
 import chalk from 'chalk';
+import readline from 'readline';
 
 /**
  * Log with color based on level
@@ -147,13 +148,13 @@ export function sleep(ms) {
  */
 export function waitForEnter() {
   return new Promise(resolve => {
-    const readline = require('readline').createInterface({
+    const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout
     });
 
-    readline.question('', () => {
-      readline.close();
+    rl.question('', () => {
+      rl.close();
       resolve();
     });
   });
@@ -166,7 +167,7 @@ export function waitForEnter() {
  */
 export function promptAction(actions) {
   return new Promise((resolve) => {
-    const readline = require('readline').createInterface({
+    const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout
     });
@@ -179,15 +180,15 @@ export function promptAction(actions) {
 
     console.log();
 
-    readline.question(chalk.bold('Select (1-' + actions.length + '): '), (answer) => {
+    rl.question(chalk.bold('Select (1-' + actions.length + '): '), (answer) => {
       const choice = parseInt(answer);
 
       if (isNaN(choice) || choice < 1 || choice > actions.length) {
         console.log(chalk.red('\n❌ Invalid choice. Please try again.\n'));
-        readline.close();
+        rl.close();
         resolve(promptAction(actions)); // Recursive retry
       } else {
-        readline.close();
+        rl.close();
         resolve(actions[choice - 1]);
       }
     });
