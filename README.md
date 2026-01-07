@@ -71,50 +71,77 @@ node cli.js generate --no-save
 
 ### Auto-Add to Waitrose Basket
 
-After generating a shopping list, you can automatically add items to your Waitrose basket:
+Automatically add your generated shopping list to your Waitrose basket using browser automation.
 
-**How it works:**
-1. Generate your shopping list as usual
-2. When prompted, select "Send to Waitrose basket"
-3. Claude automates the browser to search and add each item
-4. Review your basket on Waitrose and checkout
+**⚠️ Important: Two Usage Modes**
 
-**Example workflow:**
+This application works in two different modes:
+
+**1. Standalone CLI Mode** (Limited)
 ```bash
-# Run via Claude Code
-"Generate shopping list for 7 days"
-
-# CLI displays list
-# ✓ Generated shopping list for 7 days (10 items)
-#
-# ❓ What would you like to do?
-#   1. Send to Waitrose basket
-#   2. Regenerate list
-#   3. Save and exit
-#
-# Select (1-3): 1
-
-# Automation runs
-# 🛒 Adding 10 items to basket...
-#   (1/10) Adding Organic Milk... ✓
-#   (2/10) Adding Bananas... ✓
-#   ...
-# ✓ Added 8/10 items (2 unavailable)
-#
-# 🌐 Review your basket and checkout when ready
+node cli.js generate
 ```
+- ✅ Generates shopping lists
+- ✅ View history and statistics
+- ❌ **No basket automation** (displays warning if selected)
+- Use this for: Quick list generation, viewing stats
+
+**2. Claude Code Integration Mode** (Full Features)
+```javascript
+// Via Claude Code - ask Claude:
+"Generate a shopping list and add to Waitrose basket"
+```
+- ✅ Full shopping list generation
+- ✅ **Complete basket automation**
+- ✅ Direct Chrome browser control
+- Use this for: Complete end-to-end automation
+
+**Why the difference?**
+
+The CLI runs as a separate Node.js process that can't access Chrome automation tools. Claude Code integration calls the modules directly with browser automation capabilities.
+
+**Claude Code Workflow:**
+
+1. **Ask Claude**: "Generate my shopping list for 7 days and add to Waitrose basket"
+
+2. **Claude generates the list**:
+   ```
+   📋 Shopping List Generated
+
+   🔄 REGULAR ITEMS
+   • Waitrose Wild Rocket (2x) - Confidence: ████████ 80%
+   • Duchy Organic Blueberries (1x) - Confidence: ██████████ 100%
+   ...
+
+   ✔ Shopping list saved (ID: 14)
+   ```
+
+3. **Claude automates the basket**:
+   ```
+   🛒 Starting basket automation...
+
+   (1/11) Adding Waitrose Wild Rocket... ✓
+   (2/11) Adding Duchy Organic Blueberries... ✓
+   ...
+
+   ✓ Basket automation complete
+   Added: 9/11 items
+   Failed: 2 items (out of stock)
+
+   🌐 Review your basket and checkout when ready
+   ```
 
 **Features:**
 - ✅ Automatic product search and basket addition
 - ✅ Handles out-of-stock items gracefully
 - ✅ Sets correct quantities
-- ✅ Navigates to basket page for final review
-- ✅ You review and checkout on Waitrose site
+- ✅ Reports success/failure for each item
+- ✅ You manually review and checkout
 
 **Requirements:**
-- Must be run via Claude Code (not standalone CLI)
-- Chrome browser with Claude in Chrome MCP tools
-- Active Waitrose account
+- Claude Code with Chrome MCP tools enabled
+- Chrome browser
+- Active Waitrose account (logged in)
 
 ### View History
 
@@ -280,22 +307,51 @@ Only anonymized pattern summaries like:
 
 ```
 waitrose-order-generator/
-├── cli.js                  # Main CLI entry point
+├── cli.js                     # Standalone CLI entry point
 ├── package.json
-├── .env                    # Your API key (not committed)
-├── .env.example           # Template for API key
+├── .env                       # Your API key (not committed)
+├── .env.example              # Template for API key
 ├── src/
-│   ├── database.js        # SQLite database setup and queries
-│   ├── analyzer.js        # Pattern analysis logic
-│   ├── claude-client.js   # Claude API integration
-│   ├── basket-automator.js # Waitrose basket automation via Chrome
-│   ├── chrome-scraper.js  # Chrome MCP tools integration
-│   ├── scraper.js         # Abstract scraper interface
-│   └── utils.js           # Logging and formatting utilities
+│   ├── list-generator.js     # Core list generation logic (shared)
+│   ├── claude-workflow.js    # Claude Code integration entry point
+│   ├── database.js           # SQLite database setup and queries
+│   ├── analyzer.js           # Pattern analysis logic
+│   ├── claude-client.js      # Claude API integration
+│   ├── basket-automator.js   # Waitrose basket automation via Chrome
+│   ├── chrome-scraper.js     # Chrome MCP tools integration
+│   ├── scraper.js            # Abstract scraper interface
+│   └── utils.js              # Logging and formatting utilities
 ├── data/
-│   └── shopping.db        # Local SQLite database (auto-created)
+│   └── shopping.db           # Local SQLite database (auto-created)
 └── README.md
 ```
+
+### Dual-Mode Architecture
+
+The application supports two execution modes through a modular architecture:
+
+**Shared Core (`src/list-generator.js`)**
+- Business logic for list generation
+- Database operations
+- Pattern analysis
+- Used by both CLI and Claude Code modes
+
+**Standalone CLI (`cli.js`)**
+- Commander.js interface
+- Terminal UI and user prompts
+- Limited to list generation and viewing
+- Runs in isolated Node.js process
+- **Cannot access Chrome automation**
+
+**Claude Code Integration (`src/claude-workflow.js`)**
+- Direct module imports (no subprocess)
+- Chrome MCP tools access via Claude
+- Full basket automation capabilities
+- Called when you ask Claude to generate lists
+
+**Why This Design?**
+
+When Claude runs `node cli.js`, it spawns a separate process that can't access Chrome automation tools (`global.claudeCodeChromeTools` is undefined). The `claude-workflow.js` module solves this by providing a direct entry point that Claude can call with Chrome tools passed as parameters.
 
 ## Development
 
