@@ -138,13 +138,18 @@ export function predictItemNeed(item, intervals, targetDays = 7) {
     return false;
   }
 
+  // Add buffer window: include items due within targetDays + 3
+  // This ensures we don't miss items coming due soon
+  const BUFFER_DAYS = 3;
+  const planningWindow = targetDays + BUFFER_DAYS;
+
   // Regular items: predict if we're close to typical interval
   if (classification === 'regular' && intervals.avg_interval) {
     const expectedNextPurchase = intervals.avg_interval;
     const daysTillDue = expectedNextPurchase - days_since_last_purchase;
 
-    // Due within target days
-    return daysTillDue <= targetDays && daysTillDue >= -2; // Allow 2 days overdue
+    // Due within planning window (target + buffer)
+    return daysTillDue <= planningWindow && daysTillDue >= -2; // Allow 2 days overdue
   }
 
   // Infrequent items: predict if it's been a while
@@ -152,8 +157,8 @@ export function predictItemNeed(item, intervals, targetDays = 7) {
     const expectedNextPurchase = intervals.avg_interval;
     const daysTillDue = expectedNextPurchase - days_since_last_purchase;
 
-    // Due within target days or overdue
-    return daysTillDue <= targetDays;
+    // Due within planning window or overdue
+    return daysTillDue <= planningWindow;
   }
 
   return false;
