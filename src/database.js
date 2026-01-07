@@ -12,6 +12,15 @@ const DB_PATH = join(__dirname, '..', 'data', 'shopping.db');
 export function initializeDatabase() {
   const db = new Database(DB_PATH);
 
+  // CRITICAL: Enable foreign keys FIRST (before any operations)
+  db.pragma('foreign_keys = ON');
+
+  // Verify foreign keys are enabled
+  const fkStatus = db.pragma('foreign_keys', { simple: true });
+  if (!fkStatus) {
+    throw new Error('Failed to enable foreign key constraints');
+  }
+
   // Enable WAL mode for better concurrency
   db.pragma('journal_mode = WAL');
 
@@ -51,6 +60,20 @@ export function initializeDatabase() {
       confidence REAL,
       FOREIGN KEY (list_id) REFERENCES shopping_lists(id) ON DELETE CASCADE
     );
+
+    -- Sync metadata table for tracking detection runs
+    CREATE TABLE IF NOT EXISTS sync_metadata (
+      key TEXT PRIMARY KEY,
+      last_sync_time TEXT,
+      last_sync_timestamp INTEGER,
+      order_count_at_sync INTEGER,
+      status TEXT CHECK(status IN ('success', 'partial', 'failed'))
+    );
+
+    -- Initialize sync metadata if not exists
+    INSERT OR IGNORE INTO sync_metadata
+    (key, last_sync_time, last_sync_timestamp, order_count_at_sync, status)
+    VALUES ('waitrose_orders', NULL, 0, 0, 'success');
 
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(order_date);
@@ -262,4 +285,67 @@ export function clearAllData(db) {
     DELETE FROM order_items;
     DELETE FROM orders;
   `);
+}
+
+/**
+ * Get last sync timestamp
+ */
+export function getLastSyncTime(db) {
+  const result = db.prepare(`
+    SELECT last_sync_time, last_sync_timestamp
+    FROM sync_metadata
+    WHERE key = 'waitrose_orders'
+  `).get();
+
+  return result ? {
+    time: result.last_sync_time,
+    timestamp: result.last_sync_timestamp
+  } : { time: null, timestamp: 0 };
+}
+
+/**
+ * Update sync metadata after detection
+ */
+export function updateSyncMetadata(db, orderCount, status = 'success') {
+  const now = new Date();
+  const isoTime = now.toISOString();
+  const unixTime = Math.floor(now.getTime() / 1000);
+
+  const stmt = db.prepare(`
+    UPDATE sync_metadata
+    SET
+      last_sync_time = ?,
+      last_sync_timestamp = ?,
+      order_count_at_sync = ?,
+      status = ?
+    WHERE key = 'waitrose_orders'
+  `);
+
+  stmt.run(isoTime, unixTime, orderCount, status);
+}
+
+/**
+ * Filter to only new orders (not in database)
+ * Uses bulk query to avoid N+1 performance problem
+ */
+export function filterExistingOrders(db, orders) {
+  if (orders.length === 0) {
+    return [];
+  }
+
+  // Extract all order numbers for bulk query
+  const orderNumbers = orders.map(o => o.order_number);
+
+  // Build placeholders for IN clause (?, ?, ?, ...)
+  const placeholders = orderNumbers.map(() => '?').join(', ');
+
+  // Single bulk query instead of N individual queries
+  const query = `SELECT order_number FROM orders WHERE order_number IN (${placeholders})`;
+  const existingOrders = db.prepare(query).all(...orderNumbers);
+
+  // Convert to Set for O(1) lookup
+  const existingSet = new Set(existingOrders.map(row => row.order_number));
+
+  // Filter out existing orders
+  return orders.filter(order => !existingSet.has(order.order_number));
 }

@@ -14,7 +14,8 @@ import {
   saveShoppingList,
   getOrderCount,
   getAllShoppingLists,
-  getShoppingList
+  getShoppingList,
+  getLastSyncTime
 } from './src/database.js';
 import {
   classifyItems,
@@ -25,6 +26,23 @@ import { generateShoppingList } from './src/claude-client.js';
 import { log, formatShoppingList, formatSimpleList, displayError } from './src/utils.js';
 
 const program = new Command();
+
+/**
+ * Validate numeric input to prevent injection and memory exhaustion attacks
+ */
+function validateNumericInput(value, paramName, min = 0, max = 1000) {
+  const parsed = parseInt(value);
+
+  if (isNaN(parsed)) {
+    throw new Error(`${paramName} must be a valid number`);
+  }
+
+  if (parsed < min || parsed > max) {
+    throw new Error(`${paramName} must be between ${min} and ${max}`);
+  }
+
+  return parsed;
+}
 
 program
   .name('waitrose-generate')
@@ -130,6 +148,42 @@ program
   });
 
 /**
+ * Command: Detect new orders
+ */
+program
+  .command('detect')
+  .description('Check for new orders since last scrape (requires Claude Code)')
+  .option('--auto-import', 'Automatically import new orders (not yet implemented)')
+  .option('--max <number>', 'Maximum orders to check', '50')
+  .action(async (options) => {
+    try {
+      const db = initializeDatabase();
+      const lastSync = getLastSyncTime(db);
+      const orderCount = getOrderCount(db);
+
+      console.log(chalk.bold.cyan('\n🔍 Order Detection Status\n'));
+      console.log(chalk.gray('═'.repeat(50)));
+      console.log(`${chalk.bold('Last sync:')} ${lastSync.time || 'Never'}`);
+      console.log(`${chalk.bold('Orders in database:')} ${orderCount}`);
+      console.log(chalk.gray('═'.repeat(50)) + '\n');
+
+      console.log(chalk.yellow('💡 Detection requires Claude Code integration\n'));
+      console.log('To detect new orders:');
+      console.log(chalk.gray('1. Open Claude Code (https://claude.com/code)'));
+      console.log(chalk.gray('2. Ask: "Detect new Waitrose orders"'));
+      console.log(chalk.gray('3. Claude will use Chrome automation to check for new orders\n'));
+
+      console.log(chalk.dim('Note: This command shows status only.'));
+      console.log(chalk.dim('Full detection requires Claude in Chrome MCP tools.\n'));
+
+      db.close();
+    } catch (error) {
+      displayError(error);
+      process.exit(1);
+    }
+  });
+
+/**
  * Command: View shopping list history
  */
 program
@@ -143,7 +197,8 @@ program
 
       if (options.id) {
         // Show specific list
-        const list = getShoppingList(db, parseInt(options.id));
+        const listId = validateNumericInput(options.id, '--id', 1, 9999);
+        const list = getShoppingList(db, listId);
 
         if (!list) {
           log(`List #${options.id} not found`, 'error');
@@ -162,8 +217,9 @@ program
         console.log();
       } else {
         // Show list of recent lists
+        const limit = validateNumericInput(options.limit, '--limit', 1, 100);
         const lists = getAllShoppingLists(db);
-        const limited = lists.slice(0, parseInt(options.limit));
+        const limited = lists.slice(0, limit);
 
         if (limited.length === 0) {
           log('No shopping lists found', 'warning');

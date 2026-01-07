@@ -134,3 +134,27 @@ export function progressText(current, total, message) {
 
   return `${message} [${bar}${empty}] ${percentage}%`;
 }
+
+/**
+ * Helper: Sleep for specified milliseconds
+ */
+export function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Helper: Wait for user to press Enter
+ */
+export function waitForEnter() {
+  return new Promise(resolve => {
+    const readline = require('readline').createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    readline.question('', () => {
+      readline.close();
+      resolve();
+    });
+  });
+}
