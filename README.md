@@ -9,6 +9,7 @@ Automatically generate smart shopping lists by analyzing your Waitrose order his
 - 🤖 **AI-Powered Analysis**: Claude analyzes your shopping patterns to predict what you'll need
 - 📊 **Pattern Recognition**: Distinguishes between regular items (milk, bread) and infrequent purchases (special items)
 - 🎯 **Smart Quantities**: Suggests realistic quantities based on your typical consumption
+- 🛒 **Auto-Add to Basket**: One-click automation to add your shopping list to Waitrose basket (via Claude Code)
 - 🔒 **Privacy-First**: All data stored locally, only aggregated patterns sent to Claude
 - ⚡ **Fast & Local**: SQLite database for instant analysis
 - 🎨 **Beautiful CLI**: Clear, colorful terminal interface
@@ -67,6 +68,53 @@ node cli.js generate --days 5 --simple
 # Generate without saving
 node cli.js generate --no-save
 ```
+
+### Auto-Add to Waitrose Basket
+
+After generating a shopping list, you can automatically add items to your Waitrose basket:
+
+**How it works:**
+1. Generate your shopping list as usual
+2. When prompted, select "Send to Waitrose basket"
+3. Claude automates the browser to search and add each item
+4. Review your basket on Waitrose and checkout
+
+**Example workflow:**
+```bash
+# Run via Claude Code
+"Generate shopping list for 7 days"
+
+# CLI displays list
+# ✓ Generated shopping list for 7 days (10 items)
+#
+# ❓ What would you like to do?
+#   1. Send to Waitrose basket
+#   2. Regenerate list
+#   3. Save and exit
+#
+# Select (1-3): 1
+
+# Automation runs
+# 🛒 Adding 10 items to basket...
+#   (1/10) Adding Organic Milk... ✓
+#   (2/10) Adding Bananas... ✓
+#   ...
+# ✓ Added 8/10 items (2 unavailable)
+#
+# 🌐 Review your basket and checkout when ready
+```
+
+**Features:**
+- ✅ Automatic product search and basket addition
+- ✅ Handles out-of-stock items gracefully
+- ✅ Sets correct quantities
+- ✅ Navigates to basket page for final review
+- ✅ You review and checkout on Waitrose site
+
+**Requirements:**
+- Must be run via Claude Code (not standalone CLI)
+- Chrome browser with Claude in Chrome MCP tools
+- Active Waitrose account
 
 ### View History
 
@@ -240,7 +288,9 @@ waitrose-order-generator/
 │   ├── database.js        # SQLite database setup and queries
 │   ├── analyzer.js        # Pattern analysis logic
 │   ├── claude-client.js   # Claude API integration
-│   ├── scraper.js         # Waitrose scraping (coming soon)
+│   ├── basket-automator.js # Waitrose basket automation via Chrome
+│   ├── chrome-scraper.js  # Chrome MCP tools integration
+│   ├── scraper.js         # Abstract scraper interface
 │   └── utils.js           # Logging and formatting utilities
 ├── data/
 │   └── shopping.db        # Local SQLite database (auto-created)
@@ -323,6 +373,7 @@ node test-db.js
 - [x] Sync metadata tracking
 - [x] Order deduplication
 - [x] Detection status command
+- [x] Auto-add items to Waitrose basket (via Claude Code)
 
 ### 🚧 v0.3 (Next)
 - [ ] Automated batch scraping
@@ -331,11 +382,12 @@ node test-db.js
 - [ ] Export formats (CSV, PDF)
 
 ### 🔮 Future
-- [ ] Auto-add items to Waitrose basket
 - [ ] Dietary preferences and exclusions
 - [ ] Seasonal pattern detection
 - [ ] Budget tracking
 - [ ] Multi-store support (Tesco, Sainsbury's)
+- [ ] Session persistence for basket automation
+- [ ] Product variant preferences (organic vs. standard)
 
 ## License
 

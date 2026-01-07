@@ -23,7 +23,8 @@ import {
   generatePatternSummary
 } from './src/analyzer.js';
 import { generateShoppingList } from './src/claude-client.js';
-import { log, formatShoppingList, formatSimpleList, displayError } from './src/utils.js';
+import { log, formatShoppingList, formatSimpleList, displayError, promptAction } from './src/utils.js';
+import { populateBasket } from './src/basket-automator.js';
 
 const program = new Command();
 
@@ -116,11 +117,63 @@ program
         console.log(formatShoppingList(result.recommendations));
       }
 
-      // Save to database
+      // Prompt user for action
+      const action = await promptAction([
+        'Send to Waitrose basket',
+        'Regenerate list',
+        'Save and exit'
+      ]);
+
+      if (action === 'Regenerate list') {
+        // Recursively call generate again
+        db.close();
+        console.log('\n');
+        return program.parse(['node', 'cli.js', 'generate', '--days', daysCoverage.toString()]);
+      }
+
+      // Save to database before basket automation or exit
+      let listId = null;
       if (options.save) {
         spinner.start('Saving shopping list...');
-        const listId = saveShoppingList(db, daysCoverage, result.recommendations);
+        listId = saveShoppingList(db, daysCoverage, result.recommendations);
         spinner.succeed(`Shopping list saved (ID: ${listId})`);
+      }
+
+      if (action === 'Send to Waitrose basket') {
+        // Access Chrome MCP tools (provided by Claude when running in Claude Code)
+        const chromeTools = global.claudeCodeChromeTools;
+
+        if (!chromeTools) {
+          console.log(chalk.yellow('\n⚠️  Chrome MCP tools not available'));
+          console.log('This feature is designed to be run via Claude Code.\n');
+          db.close();
+          return;
+        }
+
+        try {
+          // Run basket automation
+          const basketResults = await populateBasket(
+            chromeTools,
+            result.recommendations,
+            { listId }
+          );
+
+          // Display summary
+          console.log(chalk.bold.green(`\n✓ Basket automation complete\n`));
+          console.log(`  Added: ${basketResults.added.length}/${result.recommendations.length} items`);
+
+          if (basketResults.failed.length > 0) {
+            console.log(chalk.yellow(`  Failed: ${basketResults.failed.length} items`));
+            basketResults.failed.forEach(item => {
+              console.log(chalk.gray(`    • ${item.item} (${item.status})`));
+            });
+          }
+
+          console.log(chalk.cyan('\n🌐 Review your basket and checkout when ready\n'));
+
+        } catch (error) {
+          console.log(chalk.red('\n❌ Basket automation failed:'), error.message);
+        }
       }
 
       db.close();
