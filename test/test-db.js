@@ -16,7 +16,7 @@ import {
   getAllShoppingLists,
   getOrderCount,
   clearAllData
-} from './src/database.js';
+} from '../src/database.js';
 
 console.log('🧪 Testing database setup...\n');
 

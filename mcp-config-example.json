@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "waitrose-shopping": {
+      "command": "node",
+      "args": ["/absolute/path/to/waitrose-order-generator/mcp-server.js"],
+      "env": {
+        "ANTHROPIC_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}

@@ -308,9 +308,12 @@ Only anonymized pattern summaries like:
 ```
 waitrose-order-generator/
 ├── cli.js                     # Standalone CLI entry point
+├── mcp-server.js             # MCP server for Claude Desktop integration
 ├── package.json
 ├── .env                       # Your API key (not committed)
 ├── .env.example              # Template for API key
+├── mcp-config-example.json   # Example MCP server configuration
+├── MCP-README.md             # MCP server documentation
 ├── src/
 │   ├── list-generator.js     # Core list generation logic (shared)
 │   ├── claude-workflow.js    # Claude Code integration entry point
@@ -323,6 +326,11 @@ waitrose-order-generator/
 │   └── utils.js              # Logging and formatting utilities
 ├── data/
 │   └── shopping.db           # Local SQLite database (auto-created)
+├── test/
+│   ├── test-db.js            # Database setup tests
+│   ├── test-analyzer.js      # Pattern analysis tests
+│   ├── test-claude.js        # Claude API tests
+│   └── test-mcp-server.js    # MCP server validation tests
 └── README.md
 ```
 
@@ -352,6 +360,59 @@ The application supports two execution modes through a modular architecture:
 **Why This Design?**
 
 When Claude runs `node cli.js`, it spawns a separate process that can't access Chrome automation tools (`global.claudeCodeChromeTools` is undefined). The `claude-workflow.js` module solves this by providing a direct entry point that Claude can call with Chrome tools passed as parameters.
+
+## MCP Server Integration
+
+**NEW in Phase 1**: This application now includes an MCP (Model Context Protocol) server that exposes shopping list functionality as tools for Claude Desktop and other AI assistants.
+
+### MCP Tools Available
+
+The MCP server provides four tools:
+
+1. **`generate_shopping_list`** - Generate intelligent shopping lists
+   - Parameters: `days` (5-8), `save` (boolean)
+   - Returns: AI-recommended items with quantities and confidence scores
+
+2. **`get_statistics`** - View shopping pattern statistics
+   - Shows total orders, unique products, classifications, top 10 items
+
+3. **`get_shopping_history`** - List previously generated shopping lists
+   - Parameters: `limit` (1-100, default: 10)
+
+4. **`get_shopping_list`** - Get detailed information about a specific list
+   - Parameters: `list_id` (required)
+
+### Quick Start
+
+1. **Configure Claude Desktop:**
+
+   Edit your Claude Desktop config file:
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+   Add this configuration:
+   ```json
+   {
+     "mcpServers": {
+       "waitrose-shopping": {
+         "command": "node",
+         "args": ["/absolute/path/to/waitrose-order-generator/mcp-server.js"],
+         "env": {
+           "ANTHROPIC_API_KEY": "your-api-key-here"
+         }
+       }
+     }
+   }
+   ```
+
+2. **Restart Claude Desktop**
+
+3. **Use natural language:**
+   - "Generate a shopping list for 7 days"
+   - "Show me my shopping statistics"
+   - "What shopping lists have I created?"
+
+For complete MCP server documentation, see [MCP-README.md](./MCP-README.md).
 
 ## Development
 
@@ -430,6 +491,7 @@ node test-db.js
 - [x] Order deduplication
 - [x] Detection status command
 - [x] Auto-add items to Waitrose basket (via Claude Code)
+- [x] MCP Server Phase 1 - Core tools for Claude Desktop
 
 ### 🚧 v0.3 (Next)
 - [ ] Automated batch scraping
